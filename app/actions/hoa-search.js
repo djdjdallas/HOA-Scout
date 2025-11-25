@@ -94,11 +94,14 @@ export async function searchHOA(formData) {
       console.log('📦 Found existing HOA:', existingHOA.id)
       console.log('🔍 Checking analysis status - overall_score:', existingHOA.overall_score)
 
-      // Check if analysis has been completed
+      // Check if analysis has been completed AND is good quality
       const isAnalyzed = existingHOA.overall_score !== null
+      const isLowQuality = existingHOA.data_completeness <= 30 // Fallback analysis produces 25%
+      const needsReanalysis = !isAnalyzed || isLowQuality
 
-      if (!isAnalyzed) {
-        console.log('⚠️ HOA exists but not analyzed yet - triggering analysis')
+      if (needsReanalysis) {
+        const reason = !isAnalyzed ? 'not analyzed yet' : 'low quality data (likely fallback)'
+        console.log(`⚠️ HOA exists but ${reason} - triggering re-analysis`)
         // Trigger analysis for unanalyzed HOA
         analyzeHOA(existingHOA.id)
           .then(result => {
@@ -124,12 +127,13 @@ export async function searchHOA(formData) {
         }
       }
 
-      // Check if data is recent (less than 30 days old)
+      // Check if data is recent (less than 30 days old) AND good quality
       const daysSinceUpdate = (Date.now() - new Date(existingHOA.last_updated).getTime()) / (1000 * 60 * 60 * 24)
+      const hasGoodQuality = existingHOA.data_completeness > 30
 
-      if (daysSinceUpdate < 30) {
-        // Data is fresh and analyzed, return it
-        console.log('✅ Returning fresh analyzed HOA')
+      if (daysSinceUpdate < 30 && hasGoodQuality) {
+        // Data is fresh, analyzed, and good quality - return it
+        console.log('✅ Returning fresh analyzed HOA (quality:', existingHOA.data_completeness + '%)')
         searchLog.hoa_id = existingHOA.id
         searchLog.search_result_status = 'found'
 
@@ -145,12 +149,21 @@ export async function searchHOA(formData) {
         }
       }
 
-      // Data is stale, queue for refresh but return existing
-      console.log('⚠️ HOA data is stale, queueing refresh')
-      await queueHOARefresh(existingHOA.id)
+      // Data is stale or low quality, trigger immediate re-analysis
+      const staleReason = !hasGoodQuality ? 'low quality' : 'stale'
+      console.log(`⚠️ HOA data is ${staleReason}, triggering re-analysis`)
+
+      // Trigger immediate re-analysis instead of just queueing
+      analyzeHOA(existingHOA.id)
+        .then(result => {
+          console.log('✅ Re-analysis completed for HOA:', existingHOA.id, result)
+        })
+        .catch(error => {
+          console.error('❌ Re-analysis error for HOA:', existingHOA.id, error)
+        })
 
       searchLog.hoa_id = existingHOA.id
-      searchLog.search_result_status = 'found'
+      searchLog.search_result_status = 'processing'
 
       await supabase
         .from('user_searches')
@@ -160,6 +173,7 @@ export async function searchHOA(formData) {
         success: true,
         hoaId: existingHOA.id,
         cached: true,
+        processing: true, // Indicate re-analysis is happening
         stale: true,
         data: existingHOA
       }
