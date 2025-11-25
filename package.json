@@ -1,0 +1,34 @@
+{
+  "name": "hoa-scout",
+  "version": "1.0.0",
+  "description": "Comprehensive HOA evaluation tool for homebuyers",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.5.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@tailwindcss/forms": "^0.5.9",
+    "@tailwindcss/typography": "^0.5.15",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.454.0",
+    "next": "^16.0.3",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "recharts": "^2.13.0",
+    "swr": "^2.2.5",
+    "tailwind-merge": "^2.5.5"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "15.0.3",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.1"
+  }
+}
