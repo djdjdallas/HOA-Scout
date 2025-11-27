@@ -6,7 +6,7 @@
 
 'use client'
 
-import { MapPin, Star, Coffee, ShoppingBag, Utensils, TreePine, ExternalLink, Home } from 'lucide-react'
+import { MapPin, Star, Coffee, ShoppingBag, Utensils, TreePine, ExternalLink, Home, Waves, CircleDot, Heart, Pill } from 'lucide-react'
 
 export default function NeighborhoodContext({ neighborhoodData, city, state, userAddress = null, source = null }) {
   if (!neighborhoodData) {
@@ -121,6 +121,42 @@ export default function NeighborhoodContext({ neighborhoodData, city, state, use
             label="Grocery"
             color="purple"
           />
+          {/* Florida-specific: Beaches */}
+          {(neighborhoodData.beaches_count > 0 || neighborhoodData.statistics?.beaches > 0) && (
+            <MetricBox
+              icon={<Waves className="h-4 w-4" />}
+              value={neighborhoodData.beaches_count || neighborhoodData.statistics?.beaches || 0}
+              label="Beaches"
+              color="cyan"
+            />
+          )}
+          {/* Florida-specific: Golf */}
+          {(neighborhoodData.golf_count > 0 || neighborhoodData.statistics?.golf > 0) && (
+            <MetricBox
+              icon={<CircleDot className="h-4 w-4" />}
+              value={neighborhoodData.golf_count || neighborhoodData.statistics?.golf || 0}
+              label="Golf"
+              color="green"
+            />
+          )}
+          {/* Medical Services */}
+          {(neighborhoodData.medical_count > 0 || neighborhoodData.statistics?.medical > 0) && (
+            <MetricBox
+              icon={<Heart className="h-4 w-4" />}
+              value={neighborhoodData.medical_count || neighborhoodData.statistics?.medical || 0}
+              label="Medical"
+              color="red"
+            />
+          )}
+          {/* Pharmacies */}
+          {(neighborhoodData.pharmacy_count > 0 || neighborhoodData.statistics?.pharmacy > 0) && (
+            <MetricBox
+              icon={<Pill className="h-4 w-4" />}
+              value={neighborhoodData.pharmacy_count || neighborhoodData.statistics?.pharmacy || 0}
+              label="Pharmacy"
+              color="blue"
+            />
+          )}
         </div>
 
         {/* Top Rated Businesses */}
@@ -207,7 +243,9 @@ function MetricBox({ icon, value, label, color }) {
     amber: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
     green: 'text-green-400 bg-green-500/10 border-green-500/30',
     purple: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
-    cyan: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30'
+    cyan: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
+    red: 'text-red-400 bg-red-500/10 border-red-500/30',
+    blue: 'text-blue-400 bg-blue-500/10 border-blue-500/30'
   }
 
   const colorClass = colors[color] || colors.cyan

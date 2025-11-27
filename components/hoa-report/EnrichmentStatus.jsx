@@ -81,7 +81,7 @@ export default function EnrichmentStatus({ hoaId, initialPublicRecords, hoaName 
 
           {/* Animated search lines */}
           <div className="mt-4 space-y-2">
-            {['Nevada Secretary of State', 'Management Company Portals', 'Community Websites'].map((source, i) => (
+            {['Florida SunBiz Corporation Records', 'Management Company Portals', 'Community Websites', 'Florida DBPR'].map((source, i) => (
               <div
                 key={source}
                 className="flex items-center gap-2 text-[10px] font-mono text-slate-500"
@@ -164,6 +164,59 @@ export default function EnrichmentStatus({ hoaId, initialPublicRecords, hoaName 
         </div>
 
         <div className="p-5 space-y-4">
+          {/* SunBiz Verification Badge */}
+          {enrichmentData.data?.sunbiz?.documentNumber && (
+            <div className="p-3 bg-green-500/10 border border-green-500/30 rounded">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                <span className="text-[10px] font-mono uppercase tracking-widest text-green-400">
+                  Florida SunBiz Verified
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                <div>
+                  <span className="text-slate-500">Doc #:</span>{' '}
+                  <span className="text-slate-300">{enrichmentData.data.sunbiz.documentNumber}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Status:</span>{' '}
+                  <span className={enrichmentData.data.sunbiz.status === 'Active' ? 'text-green-400' : 'text-amber-400'}>
+                    {enrichmentData.data.sunbiz.status}
+                  </span>
+                </div>
+                {enrichmentData.data.sunbiz.filingDate && (
+                  <div>
+                    <span className="text-slate-500">Filed:</span>{' '}
+                    <span className="text-slate-300">{enrichmentData.data.sunbiz.filingDate}</span>
+                  </div>
+                )}
+                {enrichmentData.data.sunbiz.lastAnnualReport && (
+                  <div>
+                    <span className="text-slate-500">Annual Report:</span>{' '}
+                    <span className="text-slate-300">{enrichmentData.data.sunbiz.lastAnnualReport}</span>
+                  </div>
+                )}
+              </div>
+              {enrichmentData.data.sunbiz.registeredAgent?.name && (
+                <div className="mt-2 pt-2 border-t border-green-500/20">
+                  <span className="text-slate-500">Registered Agent:</span>{' '}
+                  <span className="text-slate-300">{enrichmentData.data.sunbiz.registeredAgent.name}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 55+ Community Badge */}
+          {enrichmentData.data?.is55Plus && (
+            <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded flex items-center gap-2">
+              <span className="text-lg">🏡</span>
+              <div>
+                <span className="text-sm font-mono font-semibold text-purple-300">55+ Age-Restricted Community</span>
+                <p className="text-[10px] font-mono text-slate-500">Age requirements may apply for residents</p>
+              </div>
+            </div>
+          )}
+
           {/* Subdivision Name */}
           {enrichmentData.subdivisionName && (
             <div className="p-3 bg-slate-800/50 rounded">
@@ -173,6 +226,40 @@ export default function EnrichmentStatus({ hoaId, initialPublicRecords, hoaName 
               <p className="text-sm font-mono text-slate-200">
                 {enrichmentData.subdivisionName}
               </p>
+            </div>
+          )}
+
+          {/* Master Association */}
+          {enrichmentData.data?.masterAssociation && (
+            <div className="p-3 bg-slate-800/50 rounded">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-1">
+                Master Association
+              </p>
+              <p className="text-sm font-mono text-slate-200">
+                {enrichmentData.data.masterAssociation}
+              </p>
+              <p className="text-[10px] font-mono text-amber-400 mt-1">
+                Additional fees may apply
+              </p>
+            </div>
+          )}
+
+          {/* Amenities */}
+          {enrichmentData.data?.amenities?.length > 0 && (
+            <div className="p-3 bg-slate-800/50 rounded">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+                Community Amenities
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {enrichmentData.data.amenities.map((amenity, i) => (
+                  <span
+                    key={i}
+                    className="text-[10px] font-mono px-2 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 rounded"
+                  >
+                    {amenity}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 

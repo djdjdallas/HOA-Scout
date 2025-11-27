@@ -1,21 +1,29 @@
 /**
  * Server Action: Analyze HOA data using AI and external APIs
  * This runs the complete analysis pipeline for a new HOA
+ * Optimized for Florida HOAs with comprehensive Perplexity searches
  */
 
 'use server'
 
 import { createServiceClient } from '@/lib/supabase/server'
-import { getNeighborhoodContext, cacheYelpData, generateNeighborhoodVibe } from '@/lib/apis/yelp'
+import { getNeighborhoodContext, cacheYelpData } from '@/lib/apis/yelp'
 import { analyzeHOAData, generateNeighborhoodVibe as generateVibeWithAI } from '@/lib/apis/claude'
-import { searchHOAInfo, searchManagementCompaniesByZip } from '@/lib/apis/perplexity'
+import {
+  searchHOAInfo,
+  searchManagementCompaniesByZip,
+  searchFloridaSunBiz,
+  searchHOAFinancials,
+  searchHOARules,
+  searchHOAReviews
+} from '@/lib/apis/perplexity'
 
 /**
  * Main function to analyze an HOA
  * This is called from the processing queue or can be triggered manually
  */
 export async function analyzeHOA(hoaId) {
-  console.log('🔍 Starting HOA analysis for:', hoaId)
+  console.log('🔍 Starting Florida HOA analysis for:', hoaId)
 
   try {
     const supabase = createServiceClient()
@@ -37,37 +45,40 @@ export async function analyzeHOA(hoaId) {
     const analysisData = {
       hoaName: hoa.hoa_name,
       city: hoa.city,
-      state: hoa.state,
+      state: hoa.state || 'FL',
       zipCode: hoa.zip_code,
       monthlyFee: hoa.monthly_fee,
       totalUnits: hoa.total_units,
       managementCompany: hoa.management_company
     }
 
-    // Step 2: Gather data from various sources
+    // Step 2: Gather data from multiple Perplexity searches (comprehensive)
     console.log('📊 Step 2: Gathering HOA data from multiple sources...')
 
-    // Collect public records (in production, this would scrape actual sources)
-    console.log('  → Gathering public records...')
+    // 2a: Public records + SunBiz (primary data source)
+    console.log('  → Gathering public records & SunBiz data...')
     const publicRecords = await gatherPublicRecords(hoa)
     analysisData.publicRecords = publicRecords
     console.log('  ✓ Public records gathered')
 
-    // Collect community feedback (Reddit, reviews, etc.)
+    // Get management company from public records for subsequent searches
+    const managementCompany = publicRecords.data?.managementCompany?.name || hoa.management_company
+
+    // 2b: Community feedback with real reviews
     console.log('  → Gathering community feedback...')
-    const communityFeedback = await gatherCommunityFeedback(hoa)
+    const communityFeedback = await gatherCommunityFeedback(hoa, managementCompany)
     analysisData.communityFeedback = communityFeedback
     console.log('  ✓ Community feedback gathered')
 
-    // Collect financial data
+    // 2c: Financial data search
     console.log('  → Gathering financial data...')
-    const financialData = await gatherFinancialData(hoa)
+    const financialData = await gatherFinancialData(hoa, managementCompany, publicRecords)
     analysisData.financialData = financialData
     console.log('  ✓ Financial data gathered')
 
-    // Collect rules and restrictions
+    // 2d: Rules and restrictions search
     console.log('  → Gathering rules data...')
-    const rulesData = await gatherRulesData(hoa)
+    const rulesData = await gatherRulesData(hoa, publicRecords.data?.subdivisionName)
     analysisData.rulesData = rulesData
     console.log('  ✓ Rules data gathered')
 
@@ -83,7 +94,7 @@ export async function analyzeHOA(hoaId) {
           coords.lat,
           coords.lng,
           hoa.city,
-          hoa.state
+          hoa.state || 'FL'
         )
         console.log('  ✓ Yelp data received')
 
@@ -99,7 +110,7 @@ export async function analyzeHOA(hoaId) {
           hoaId,
           hoa.coordinates,
           hoa.city,
-          hoa.state,
+          hoa.state || 'FL',
           yelpData,
           supabase
         )
@@ -119,6 +130,10 @@ export async function analyzeHOA(hoaId) {
 
     // Step 5: Update HOA profile with analysis results
     console.log('💾 Step 5: Saving analysis results to database...')
+
+    // Calculate overall data completeness based on verified fields
+    const dataCompleteness = calculateDataCompleteness(publicRecords, communityFeedback, financialData, rulesData)
+
     const updateData = {
       // Scores
       overall_score: aiAnalysis.overallScore,
@@ -130,7 +145,7 @@ export async function analyzeHOA(hoaId) {
       // Summary
       one_sentence_summary: aiAnalysis.oneSentenceSummary,
 
-      // Raw data
+      // Raw data with enhanced Perplexity results
       public_records: publicRecords,
       community_feedback: communityFeedback,
       financial_data: financialData,
@@ -147,7 +162,7 @@ export async function analyzeHOA(hoaId) {
       documents_to_request: aiAnalysis.documentsToRequest || [],
 
       // Metadata
-      data_completeness: aiAnalysis.dataQuality?.completeness || 50,
+      data_completeness: dataCompleteness,
       last_updated: new Date().toISOString()
     }
 
@@ -162,21 +177,18 @@ export async function analyzeHOA(hoaId) {
     }
     console.log('✅ HOA profile updated successfully')
 
-    // Skip revalidation when called from background (during render)
-    // Revalidation should only happen in server actions, not during analysis
     console.log('🎉 HOA analysis completed successfully for:', hoaId)
+    console.log(`   Data completeness: ${dataCompleteness}%`)
 
     return {
       success: true,
       hoaId,
-      analysis: aiAnalysis
+      analysis: aiAnalysis,
+      dataCompleteness
     }
   } catch (error) {
     console.error('💥 HOA analysis error:', error)
     console.error('Stack trace:', error.stack)
-
-    // Mark job as failed in processing queue if applicable
-    // (In a real system, you'd have a job processor that handles this)
 
     return {
       success: false,
@@ -186,14 +198,48 @@ export async function analyzeHOA(hoaId) {
 }
 
 /**
- * Gather public records data
- * Uses Perplexity API with smart search strategy:
- * 1. First, search by HOA name/street name to find subdivision and management company
- * 2. If no results, fallback to searching management companies by zip code
- * Falls back to estimated data for fields that can't be verified
+ * Calculate data completeness based on verified fields across all sources
+ */
+function calculateDataCompleteness(publicRecords, communityFeedback, financialData, rulesData) {
+  let score = 0
+  let totalPoints = 0
+
+  // Public records fields (40 points max)
+  totalPoints += 40
+  if (publicRecords.data?.subdivisionName) score += 5
+  if (publicRecords.data?.managementCompany?.verified) score += 10
+  if (publicRecords.data?.contactInfo?.phone) score += 5
+  if (publicRecords.data?.contactInfo?.website) score += 5
+  if (publicRecords.data?.sunbiz?.status) score += 10
+  if (publicRecords.data?.sunbiz?.documentNumber) score += 5
+
+  // Community feedback fields (20 points max)
+  totalPoints += 20
+  if (communityFeedback.verified) score += 10
+  if (communityFeedback.reviewCount > 0) score += 5
+  if (communityFeedback.bbbRating) score += 5
+
+  // Financial data fields (20 points max)
+  totalPoints += 20
+  if (financialData.verified) score += 10
+  if (financialData.data?.monthlyFee && financialData.data?.monthlyFeeVerified) score += 5
+  if (financialData.data?.specialAssessments?.verified) score += 5
+
+  // Rules data fields (20 points max)
+  totalPoints += 20
+  if (rulesData.verified) score += 10
+  if (rulesData.data?.ccrsAvailableOnline) score += 5
+  if (rulesData.data?.rentalRestrictions?.shortTermAllowed !== null) score += 5
+
+  return Math.round((score / totalPoints) * 100)
+}
+
+/**
+ * Gather public records data using comprehensive Perplexity searches
+ * Includes Florida SunBiz corporation data
  */
 async function gatherPublicRecords(hoa) {
-  console.log('📋 [PUBLIC RECORDS] Gathering public records for:', hoa.hoa_name)
+  console.log('📋 [PUBLIC RECORDS] Gathering Florida public records for:', hoa.hoa_name)
 
   // Extract street address from HOA name if it follows "HOA at [address]" pattern
   let streetAddress = null
@@ -201,57 +247,77 @@ async function gatherPublicRecords(hoa) {
     streetAddress = hoa.hoa_name.substring(7)
   }
 
-  // Step 1: Primary search - try to find HOA info with smart search terms
-  console.log('📋 [PUBLIC RECORDS] Step 1: Primary Perplexity search...')
-  let perplexityResult = await searchHOAInfo(
+  // Step 1: Primary search - comprehensive Florida HOA search
+  console.log('📋 [PUBLIC RECORDS] Step 1: Primary Florida HOA search...')
+  const perplexityResult = await searchHOAInfo(
     hoa.hoa_name,
     hoa.city,
-    hoa.state,
+    hoa.state || 'FL',
     hoa.zip_code,
     streetAddress
   )
 
-  // Step 2: Fallback search - if primary search failed, search by zip code
+  // Step 2: SunBiz search if primary didn't find corporation data
+  let sunbizResult = null
+  if (!perplexityResult.sunbiz?.documentNumber) {
+    console.log('📋 [PUBLIC RECORDS] Step 2: Florida SunBiz corporation search...')
+    sunbizResult = await searchFloridaSunBiz(hoa.hoa_name, hoa.city)
+  }
+
+  // Step 3: Fallback search by zip code if needed
   let zipSearchResult = null
-  if (!perplexityResult.foundInfo || !perplexityResult.managementCompany) {
-    console.log('📋 [PUBLIC RECORDS] Step 2: Fallback - searching management companies by zip code...')
+  if (!perplexityResult.foundInfo && !perplexityResult.managementCompany) {
+    console.log('📋 [PUBLIC RECORDS] Step 3: Fallback - searching by zip code...')
     zipSearchResult = await searchManagementCompaniesByZip(
       hoa.zip_code,
       hoa.city,
-      hoa.state
+      hoa.state || 'FL'
     )
-
-    // If zip search found subdivision info, it might help identify the HOA
-    if (zipSearchResult.foundInfo) {
-      console.log('📋 [PUBLIC RECORDS] Found area management companies:', zipSearchResult.companies?.length || 0)
-      if (zipSearchResult.commonSubdivisions?.length > 0) {
-        console.log('📋 [PUBLIC RECORDS] Known subdivisions in area:', zipSearchResult.commonSubdivisions.slice(0, 3).join(', '))
-      }
-    }
   }
 
-  // Step 3: Generate placeholder board members (clearly labeled as unverified)
-  const currentYear = new Date().getFullYear()
-  const mockBoardMembers = [
-    { name: 'Board President', position: 'President', term: `${currentYear}-${currentYear + 2}`, verified: false },
-    { name: 'Board Treasurer', position: 'Treasurer', term: `${currentYear}-${currentYear + 2}`, verified: false },
-    { name: 'Board Secretary', position: 'Secretary', term: `${currentYear}-${currentYear + 2}`, verified: false }
-  ]
+  // Merge SunBiz data with primary search
+  const sunbizData = sunbizResult?.foundInfo ? {
+    status: sunbizResult.status,
+    documentNumber: sunbizResult.documentNumber,
+    registeredAgent: sunbizResult.registeredAgent,
+    filingDate: sunbizResult.filingDate,
+    lastAnnualReport: sunbizResult.lastAnnualReport,
+    corporationName: sunbizResult.corporationName,
+    officers: sunbizResult.officers || [],
+    principalAddress: sunbizResult.principalAddress
+  } : perplexityResult.sunbiz || {}
 
-  // Step 4: Determine data quality/confidence level
+  // Use SunBiz officers as board members if available
+  const boardMembers = sunbizData.officers?.length > 0
+    ? sunbizData.officers.map(o => ({
+        name: o.name,
+        position: o.title,
+        verified: true,
+        source: 'Florida SunBiz'
+      }))
+    : [
+        { name: 'Board President', position: 'President', verified: false },
+        { name: 'Board Treasurer', position: 'Treasurer', verified: false },
+        { name: 'Board Secretary', position: 'Secretary', verified: false }
+      ]
+
+  // Determine confidence level
   let confidence = 'low'
   let dataSource = 'Estimated Data (verification recommended)'
 
-  if (perplexityResult.foundInfo) {
-    if (perplexityResult.managementCompany && perplexityResult.contactInfo?.phone) {
+  if (sunbizData.documentNumber || perplexityResult.foundInfo) {
+    if (sunbizData.documentNumber && perplexityResult.managementCompany) {
+      confidence = 'high'
+      dataSource = 'Florida SunBiz + Perplexity Search'
+    } else if (sunbizData.documentNumber) {
+      confidence = 'high'
+      dataSource = 'Florida SunBiz Corporation Records'
+    } else if (perplexityResult.managementCompany && perplexityResult.contactInfo?.phone) {
       confidence = 'high'
       dataSource = 'Perplexity Search + Public Records'
-    } else if (perplexityResult.managementCompany || perplexityResult.contactInfo?.website) {
+    } else if (perplexityResult.managementCompany || perplexityResult.subdivisionName) {
       confidence = 'medium'
       dataSource = 'Perplexity Search (partial match)'
-    } else if (perplexityResult.subdivisionName) {
-      confidence = 'medium'
-      dataSource = 'Perplexity Search (subdivision identified)'
     }
   } else if (zipSearchResult?.foundInfo) {
     confidence = 'low'
@@ -259,66 +325,76 @@ async function gatherPublicRecords(hoa) {
   }
 
   console.log(`📋 [PUBLIC RECORDS] Data confidence: ${confidence}`)
-  console.log(`📋 [PUBLIC RECORDS] Source: ${dataSource}`)
-  if (perplexityResult.subdivisionName) {
-    console.log(`📋 [PUBLIC RECORDS] Subdivision identified: ${perplexityResult.subdivisionName}`)
-  }
+  console.log(`📋 [PUBLIC RECORDS] SunBiz status: ${sunbizData.status || 'Not found'}`)
 
-  // Step 5: Combine real + estimated data with clear labeling
   return {
     recordingDate: new Date().toISOString(),
     source: dataSource,
-    confidence: confidence,
+    confidence,
     data: {
-      legalName: hoa.hoa_name,
+      legalName: sunbizData.corporationName || hoa.hoa_name,
       subdivisionName: perplexityResult.subdivisionName || null,
-      registrationStatus: 'Active',
+      registrationStatus: sunbizData.status || 'Unknown',
       hoaExists: perplexityResult.hoaExists,
 
-      // VERIFIED data from Perplexity (if found)
+      // Management company info
       managementCompany: {
-        name: perplexityResult.managementCompany || hoa.management_company || 'Unknown (verification needed)',
+        name: perplexityResult.managementCompany || hoa.management_company || 'Unknown',
         verified: !!perplexityResult.managementCompany
       },
       contactInfo: {
         phone: perplexityResult.contactInfo?.phone || null,
         email: perplexityResult.contactInfo?.email || null,
         website: perplexityResult.contactInfo?.website || null,
-        address: perplexityResult.contactInfo?.address || null,
+        address: perplexityResult.contactInfo?.address || sunbizData.principalAddress || null,
         verified: perplexityResult.foundInfo
       },
+
+      // Florida SunBiz data
+      sunbiz: sunbizData,
+
+      // Additional HOA info
+      yearEstablished: perplexityResult.yearEstablished || (sunbizData.filingDate ? new Date(sunbizData.filingDate).getFullYear() : null),
+      totalUnits: perplexityResult.totalUnits || hoa.total_units || null,
+      amenities: perplexityResult.amenities || [],
+      masterAssociation: perplexityResult.masterAssociation || null,
+      is55Plus: perplexityResult.is55Plus || false,
       monthlyFeeEstimate: perplexityResult.monthlyFee || (hoa.monthly_fee ? `$${hoa.monthly_fee}` : null),
 
-      // Area management companies (from fallback search)
+      // Board members (from SunBiz or placeholder)
+      boardMembers,
+
+      // Area management companies (from fallback)
       areaManagementCompanies: zipSearchResult?.companies || [],
       knownSubdivisionsInArea: zipSearchResult?.commonSubdivisions || [],
+      masterCommunities: zipSearchResult?.masterCommunities || [],
 
-      // ESTIMATED data (clearly labeled)
-      boardMembers: mockBoardMembers,
-      liens: [],
-      violations: [],
-      insuranceInfo: {
-        provider: 'To be verified',
-        coverage: 'Standard HOA Coverage (typical)',
-        lastUpdated: new Date().toISOString(),
-        verified: false
-      },
+      // County info
+      county: perplexityResult.county || zipSearchResult?.county || null,
 
-      // Data quality metadata for the AI analysis and UI
+      // Data quality metadata
       dataQuality: {
-        verified: perplexityResult.foundInfo,
-        confidence: confidence,
-        sources: [...(perplexityResult.sources || []), ...(zipSearchResult?.sources || [])],
+        verified: perplexityResult.foundInfo || sunbizResult?.foundInfo,
+        confidence,
+        sources: [
+          ...(perplexityResult.sources || []),
+          ...(sunbizResult?.sources || []),
+          ...(zipSearchResult?.sources || [])
+        ],
         lastChecked: new Date().toISOString(),
-        perplexityResponseTimeMs: perplexityResult.responseTimeMs || null,
-        searchStrategy: perplexityResult.searchStrategy || null,
+        searchTimings: {
+          hoaInfo: perplexityResult.responseTimeMs,
+          sunbiz: sunbizResult?.responseTimeMs,
+          zipSearch: zipSearchResult?.responseTimeMs
+        },
         fieldsVerified: {
+          sunbizCorporation: !!sunbizData.documentNumber,
           subdivisionName: !!perplexityResult.subdivisionName,
           managementCompany: !!perplexityResult.managementCompany,
           phone: !!perplexityResult.contactInfo?.phone,
           email: !!perplexityResult.contactInfo?.email,
           website: !!perplexityResult.contactInfo?.website,
-          address: !!perplexityResult.contactInfo?.address,
+          boardMembers: sunbizData.officers?.length > 0,
           monthlyFee: !!perplexityResult.monthlyFee
         }
       }
@@ -327,85 +403,133 @@ async function gatherPublicRecords(hoa) {
 }
 
 /**
- * Gather community feedback from Reddit, reviews, etc.
- * In production, this would use Reddit API, scrape review sites, etc.
+ * Gather community feedback using Perplexity review search
  */
-async function gatherCommunityFeedback(hoa) {
-  console.log('Gathering community feedback for:', hoa.hoa_name)
+async function gatherCommunityFeedback(hoa, managementCompany = null) {
+  console.log('💬 [COMMUNITY] Gathering community feedback for:', hoa.hoa_name)
 
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1500))
+  // Call Perplexity review search
+  const reviewResult = await searchHOAReviews(
+    hoa.hoa_name,
+    managementCompany,
+    hoa.city,
+    hoa.state || 'FL'
+  )
 
-  // For demo, return structured feedback
-  // In production, scrape Reddit, Yelp (for management company), Google reviews, etc.
+  if (reviewResult.foundInfo) {
+    console.log(`💬 [COMMUNITY] Found ${reviewResult.reviewCount} reviews, sentiment: ${reviewResult.sentiment}`)
 
-  const feedbackSources = []
-
-  // Mock Reddit posts
-  feedbackSources.push({
-    source: 'Reddit',
-    subreddit: 'RealEstate',
-    posts: [
-      {
-        title: `Living in ${hoa.hoa_name} - My Experience`,
-        body: 'Overall positive experience. Management is responsive and fees are reasonable.',
-        sentiment: 'positive',
-        upvotes: 15,
-        date: '2024-01-10',
-        url: 'https://reddit.com/r/RealEstate/example'
-      }
-    ]
-  })
-
-  // Mock management company reviews
-  if (hoa.management_company) {
-    feedbackSources.push({
-      source: 'Management Company Reviews',
-      company: hoa.management_company,
-      rating: 3.8,
-      reviewCount: 42,
-      commonThemes: [
-        'Responsive to emergencies',
-        'Slow with routine requests',
-        'Professional staff'
-      ]
-    })
+    return {
+      collectedAt: new Date().toISOString(),
+      source: 'Perplexity Review Search',
+      verified: true,
+      sentiment: reviewResult.sentiment,
+      reviewCount: reviewResult.reviewCount,
+      averageRating: reviewResult.averageRating,
+      commonComplaints: reviewResult.commonComplaints,
+      commonPraise: reviewResult.commonPraise,
+      redditMentions: reviewResult.redditMentions,
+      googleRating: reviewResult.googleReviewRating,
+      bbbRating: reviewResult.bbbRating,
+      bbbComplaints: reviewResult.bbbComplaints,
+      newsArticles: reviewResult.newsArticles,
+      neighborhoodApps: reviewResult.neighborhoodApps,
+      sources: reviewResult.sources,
+      responseTimeMs: reviewResult.responseTimeMs
+    }
   }
 
+  // Fallback to estimated feedback if no real reviews found
+  console.log('💬 [COMMUNITY] No reviews found, using estimated data')
   return {
     collectedAt: new Date().toISOString(),
-    sources: feedbackSources,
-    overallSentiment: 'mixed',
-    totalFeedbackItems: feedbackSources.length
+    source: 'No online reviews found',
+    verified: false,
+    sentiment: 'unknown',
+    reviewCount: 0,
+    averageRating: null,
+    commonComplaints: [],
+    commonPraise: [],
+    redditMentions: 0,
+    googleRating: null,
+    bbbRating: null,
+    newsArticles: [],
+    note: 'No community feedback found online. Consider asking current residents for their experience.'
   }
 }
 
 /**
- * Gather financial data
- * In production, would request from HOA or scrape public filings
- * NOTE: This returns ESTIMATED data - clearly labeled as unverified
+ * Gather financial data using Perplexity search
  */
-async function gatherFinancialData(hoa) {
-  console.log('Gathering financial data for:', hoa.hoa_name)
+async function gatherFinancialData(hoa, managementCompany = null, publicRecords = null) {
+  console.log('💰 [FINANCIAL] Gathering financial data for:', hoa.hoa_name)
 
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  // Call Perplexity financial search
+  const financialResult = await searchHOAFinancials(
+    hoa.hoa_name,
+    managementCompany,
+    hoa.city,
+    hoa.state || 'FL',
+    hoa.zip_code
+  )
 
-  // Use provided monthly fee or a reasonable default for Las Vegas area
   const currentFee = hoa.monthly_fee || 250
-  const totalUnits = hoa.total_units || 100
+  const totalUnits = hoa.total_units || publicRecords?.data?.totalUnits || 100
 
-  // Calculate estimated annual budget based on monthly fee
+  if (financialResult.foundInfo) {
+    console.log(`💰 [FINANCIAL] Found financial data: ${financialResult.monthlyFee || 'no fee info'}`)
+
+    // Parse verified monthly fee if available
+    const verifiedFee = financialResult.monthlyFee
+      ? parseFloat(financialResult.monthlyFee.replace(/[^0-9.]/g, ''))
+      : null
+
+    return {
+      lastUpdated: new Date().toISOString(),
+      source: 'Perplexity Financial Search',
+      verified: true,
+      responseTimeMs: financialResult.responseTimeMs,
+      sources: financialResult.sources,
+      data: {
+        monthlyFee: verifiedFee || currentFee,
+        monthlyFeeVerified: !!verifiedFee,
+        quarterlyFee: financialResult.quarterlyFee || null,
+        annualFee: financialResult.annualFee || null,
+        annualBudget: (verifiedFee || currentFee) * totalUnits * 12,
+        annualBudgetVerified: false,
+
+        reserveFund: {
+          percentFunded: financialResult.reserveFundPercent || null,
+          lastStudy: financialResult.lastReserveStudy || null,
+          verified: !!financialResult.reserveFundPercent
+        },
+
+        specialAssessments: {
+          history: financialResult.specialAssessments || [],
+          verified: (financialResult.specialAssessments?.length || 0) > 0
+        },
+
+        feeHistory: financialResult.feeHistory || [],
+        feeHistoryVerified: (financialResult.feeHistory?.length || 0) > 0,
+
+        financialHealth: financialResult.financialHealth || 'unknown',
+        lawsuits: financialResult.lawsuits || [],
+        delinquencyRate: financialResult.delinquencyRate || null,
+        delinquencyRateVerified: financialResult.delinquencyRate !== null
+      }
+    }
+  }
+
+  // Fallback to estimated financial data
+  console.log('💰 [FINANCIAL] No verified financials found, using estimates')
+
   const annualBudget = currentFee * totalUnits * 12
-
-  // Generate realistic fee history (typical 3-5% annual increase)
-  // Calculate backwards from current fee to avoid negative numbers
   const feeHistory = [
-    { year: 2020, monthlyFee: Math.round(currentFee * 0.85), verified: false },
-    { year: 2021, monthlyFee: Math.round(currentFee * 0.89), verified: false },
-    { year: 2022, monthlyFee: Math.round(currentFee * 0.93), verified: false },
-    { year: 2023, monthlyFee: Math.round(currentFee * 0.97), verified: false },
-    { year: 2024, monthlyFee: currentFee, verified: false }
+    { year: 2020, amount: `$${Math.round(currentFee * 0.85)}`, verified: false },
+    { year: 2021, amount: `$${Math.round(currentFee * 0.89)}`, verified: false },
+    { year: 2022, amount: `$${Math.round(currentFee * 0.93)}`, verified: false },
+    { year: 2023, amount: `$${Math.round(currentFee * 0.97)}`, verified: false },
+    { year: 2024, amount: `$${currentFee}`, verified: false }
   ]
 
   return {
@@ -415,94 +539,134 @@ async function gatherFinancialData(hoa) {
     data: {
       monthlyFee: currentFee,
       monthlyFeeVerified: !!hoa.monthly_fee,
-      annualBudget: annualBudget,
+      annualBudget,
       annualBudgetVerified: false,
+
       reserveFund: {
-        current: Math.round(annualBudget * 0.25), // 25% of annual budget (estimated)
-        recommended: Math.round(annualBudget * 0.20),
-        percentFunded: 125, // Estimated as adequately funded
-        lastStudy: '2023-06-01',
-        verified: false
+        percentFunded: null,
+        lastStudy: null,
+        verified: false,
+        note: 'Reserve fund status should be verified with HOA'
       },
+
       specialAssessments: {
         history: [],
-        upcoming: [],
-        verified: false
-      },
-      delinquencyRate: 2.1, // Industry average percentage
-      delinquencyRateVerified: false,
-      budgetBreakdown: {
-        landscaping: 30,
-        insurance: 20,
-        maintenance: 25,
-        utilities: 10,
-        management: 10,
-        reserves: 5,
         verified: false,
-        note: 'Typical HOA budget allocation percentages'
+        note: 'Special assessment history should be verified with HOA'
       },
-      feeHistory: feeHistory,
-      feeHistoryNote: 'Estimated based on typical 3-4% annual increases. Actual history should be verified with HOA.'
+
+      feeHistory,
+      feeHistoryNote: 'Estimated based on typical 3-4% annual increases',
+
+      financialHealth: 'unknown',
+      lawsuits: [],
+      delinquencyRate: null
     }
   }
 }
 
 /**
- * Gather rules and restrictions
- * In production, would parse CC&Rs, bylaws, and rule documents
+ * Gather rules and restrictions using Perplexity search
  */
-async function gatherRulesData(hoa) {
-  console.log('Gathering rules data for:', hoa.hoa_name)
+async function gatherRulesData(hoa, subdivisionName = null) {
+  console.log('📜 [RULES] Gathering rules data for:', hoa.hoa_name)
 
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 800))
+  // Call Perplexity rules search
+  const rulesResult = await searchHOARules(
+    hoa.hoa_name,
+    subdivisionName,
+    hoa.city,
+    hoa.state || 'FL'
+  )
+
+  if (rulesResult.foundInfo) {
+    console.log(`📜 [RULES] Found rules data, CC&Rs online: ${rulesResult.ccrsAvailableOnline}`)
+
+    return {
+      lastUpdated: new Date().toISOString(),
+      source: 'Perplexity Rules Search',
+      verified: true,
+      responseTimeMs: rulesResult.responseTimeMs,
+      sources: rulesResult.sources,
+      data: {
+        ccrsAvailableOnline: rulesResult.ccrsAvailableOnline || false,
+
+        rentalRestrictions: rulesResult.rentalRestrictions || {
+          shortTermAllowed: null,
+          minLeaseTerm: null,
+          rentalCapPercent: null
+        },
+
+        petRestrictions: rulesResult.petRestrictions || {
+          allowed: null,
+          maxNumber: null,
+          weightLimit: null,
+          breedRestrictions: null
+        },
+
+        parkingRules: rulesResult.parkingRules || {
+          guestParking: null,
+          rvBoatAllowed: null,
+          garageRequired: null
+        },
+
+        exteriorModifications: rulesResult.exteriorModifications || {
+          approvalRequired: null,
+          commonRestrictions: []
+        },
+
+        notableRules: rulesResult.notableRules || [],
+        recentRuleChanges: rulesResult.recentRuleChanges || []
+      }
+    }
+  }
+
+  // Fallback to typical Florida HOA rules
+  console.log('📜 [RULES] No verified rules found, using typical Florida HOA rules')
 
   return {
     lastUpdated: new Date().toISOString(),
-    source: 'HOA CC&Rs and Bylaws',
+    source: 'Typical Florida HOA Rules (verification recommended)',
+    verified: false,
     data: {
-      parking: {
-        guestParking: 'Limited - 2 spots per 100 units',
-        residentParking: '2 spaces per unit',
-        overnight: 'No street parking after 10pm',
-        rvStorage: 'Not permitted'
+      ccrsAvailableOnline: false,
+
+      rentalRestrictions: {
+        shortTermAllowed: null,
+        minLeaseTerm: null,
+        rentalCapPercent: null,
+        note: 'Florida law requires HOAs to disclose rental restrictions'
       },
-      pets: {
+
+      petRestrictions: {
         allowed: true,
-        limit: 2,
-        sizeRestriction: '35 lbs per pet',
-        breeds: 'No breed restrictions',
-        deposit: '$300 per pet'
+        maxNumber: 2,
+        weightLimit: null,
+        breedRestrictions: null,
+        note: 'Typical Florida HOA allows pets with some restrictions'
       },
-      rentals: {
-        shortTerm: 'Prohibited (< 30 days)',
-        longTerm: 'Allowed with registration',
-        ownerOccupied: '70%',
-        approvalRequired: true
+
+      parkingRules: {
+        guestParking: 'Varies by community',
+        rvBoatAllowed: false,
+        garageRequired: null,
+        note: 'Most Florida HOAs restrict RV/boat parking'
       },
-      modifications: {
-        exterior: 'Board approval required',
-        interior: 'Allowed without approval',
-        landscaping: 'Must match approved palette',
-        solar: 'Allowed with architectural review',
-        satellite: 'Allowed in approved locations'
+
+      exteriorModifications: {
+        approvalRequired: true,
+        commonRestrictions: ['Exterior paint colors', 'Landscaping changes', 'Fencing'],
+        note: 'Florida HOAs typically require approval for exterior changes'
       },
-      amenities: {
-        pool: {
-          hours: '6am - 10pm',
-          guestPolicy: 'Allowed with resident',
-          ageRestriction: 'Under 16 requires supervision'
-        },
-        gym: {
-          hours: '24/7 with key card',
-          guestPolicy: 'Allowed with resident'
-        }
-      },
-      violations: {
-        firstWarning: 'Written notice',
-        fineStructure: '$50-$500 depending on violation',
-        appealProcess: 'Board hearing within 30 days'
-      }
+
+      notableRules: [],
+      recentRuleChanges: [],
+
+      floridaLawNotes: [
+        'Florida Statute 720 governs HOAs',
+        'HOAs must provide governing documents within 10 days of request',
+        'Rental restrictions may apply - verify with HOA'
+      ]
     }
   }
 }
@@ -514,7 +678,6 @@ export async function getAnalysisStatus(hoaId) {
   try {
     const supabase = createServiceClient()
 
-    // Check if HOA has been analyzed
     const { data: hoa } = await supabase
       .from('hoa_profiles')
       .select('overall_score, data_completeness, last_updated')
@@ -522,10 +685,7 @@ export async function getAnalysisStatus(hoaId) {
       .single()
 
     if (!hoa) {
-      return {
-        status: 'not_found',
-        progress: 0
-      }
+      return { status: 'not_found', progress: 0 }
     }
 
     if (hoa.overall_score !== null) {
@@ -537,7 +697,6 @@ export async function getAnalysisStatus(hoaId) {
       }
     }
 
-    // Check processing queue
     const { data: job } = await supabase
       .from('processing_queue')
       .select('status')
@@ -554,24 +713,13 @@ export async function getAnalysisStatus(hoaId) {
         'completed': 100,
         'failed': 0
       }
-
-      return {
-        status: job.status,
-        progress: progressMap[job.status] || 0
-      }
+      return { status: job.status, progress: progressMap[job.status] || 0 }
     }
 
-    return {
-      status: 'pending',
-      progress: 0
-    }
+    return { status: 'pending', progress: 0 }
   } catch (error) {
     console.error('Get analysis status error:', error)
-    return {
-      status: 'error',
-      progress: 0,
-      error: error.message
-    }
+    return { status: 'error', progress: 0, error: error.message }
   }
 }
 
@@ -580,7 +728,6 @@ export async function getAnalysisStatus(hoaId) {
  */
 export async function triggerAnalysis(hoaId) {
   try {
-    // Queue the analysis job
     const supabase = createServiceClient()
 
     const { data: hoa } = await supabase
@@ -590,10 +737,7 @@ export async function triggerAnalysis(hoaId) {
       .single()
 
     if (!hoa) {
-      return {
-        success: false,
-        error: 'HOA not found'
-      }
+      return { success: false, error: 'HOA not found' }
     }
 
     await supabase
@@ -605,24 +749,13 @@ export async function triggerAnalysis(hoaId) {
           hoaId: hoa.id,
           hoaName: hoa.hoa_name,
           city: hoa.city,
-          state: hoa.state
+          state: hoa.state || 'FL'
         }
       })
 
-    // In production, this would trigger a background worker
-    // For demo, we can run it inline (but it will take time)
-    // Comment this out for faster response times
-    // await analyzeHOA(hoaId)
-
-    return {
-      success: true,
-      message: 'Analysis queued successfully'
-    }
+    return { success: true, message: 'Analysis queued successfully' }
   } catch (error) {
     console.error('Trigger analysis error:', error)
-    return {
-      success: false,
-      error: error.message
-    }
+    return { success: false, error: error.message }
   }
 }

@@ -131,6 +131,26 @@ export default async function HOAReportPage({ params, searchParams }) {
                   </span>
                 </div>
 
+                {/* 55+ Community Badge */}
+                {hoa.public_records?.data?.is55Plus && (
+                  <div className="flex items-center gap-2 px-3 py-1 rounded bg-purple-500/10 border border-purple-500/30">
+                    <span className="text-sm">🏡</span>
+                    <span className="font-mono text-sm text-purple-300 font-semibold">
+                      55+ Community
+                    </span>
+                  </div>
+                )}
+
+                {/* SunBiz Verified Badge */}
+                {hoa.public_records?.data?.sunbiz?.documentNumber && (
+                  <div className="flex items-center gap-2 px-3 py-1 rounded bg-green-500/10 border border-green-500/30">
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                    <span className="font-mono text-[10px] text-green-300 font-semibold uppercase tracking-wider">
+                      SunBiz Verified
+                    </span>
+                  </div>
+                )}
+
                 {(hoa.monthly_fee || hoa.public_records?.monthlyFeeEstimate) && (
                   <div className="flex items-center gap-2 px-3 py-1 rounded bg-cyan-500/10 border border-cyan-500/30">
                     <DollarSign className="h-4 w-4 text-cyan-400" />
@@ -376,11 +396,11 @@ export default async function HOAReportPage({ params, searchParams }) {
                   </div>
 
                   <div className="p-5 grid grid-cols-2 gap-3">
-                    {hoa.total_units && (
-                      <StatBox label="Total Units" value={hoa.total_units} />
+                    {(hoa.total_units || hoa.public_records?.data?.totalUnits) && (
+                      <StatBox label="Total Units" value={hoa.total_units || hoa.public_records?.data?.totalUnits} />
                     )}
-                    {hoa.year_established && (
-                      <StatBox label="Established" value={hoa.year_established} />
+                    {(hoa.year_established || hoa.public_records?.data?.yearEstablished) && (
+                      <StatBox label="Established" value={hoa.year_established || hoa.public_records?.data?.yearEstablished} />
                     )}
                     {hoa.property_type && (
                       <StatBox label="Type" value={hoa.property_type} />
@@ -388,7 +408,44 @@ export default async function HOAReportPage({ params, searchParams }) {
                     {hoa.data_completeness && (
                       <StatBox label="Data Quality" value={`${hoa.data_completeness}%`} />
                     )}
+                    {hoa.public_records?.data?.county && (
+                      <StatBox label="County" value={hoa.public_records.data.county} />
+                    )}
                   </div>
+
+                  {/* Amenities */}
+                  {hoa.public_records?.data?.amenities?.length > 0 && (
+                    <div className="px-5 pb-5">
+                      <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+                        Amenities
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {hoa.public_records.data.amenities.map((amenity, i) => (
+                          <span
+                            key={i}
+                            className="text-[10px] font-mono px-2 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 rounded capitalize"
+                          >
+                            {amenity}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Master Association Warning */}
+                  {hoa.public_records?.data?.masterAssociation && (
+                    <div className="mx-5 mb-5 p-3 bg-amber-500/10 border border-amber-500/30 rounded">
+                      <p className="text-[10px] font-mono uppercase tracking-widest text-amber-400 mb-1">
+                        Master Association
+                      </p>
+                      <p className="text-sm font-mono text-slate-300">
+                        {hoa.public_records.data.masterAssociation}
+                      </p>
+                      <p className="text-[10px] font-mono text-slate-500 mt-1">
+                        Additional HOA fees may apply
+                      </p>
+                    </div>
+                  )}
                 </section>
 
                 {/* Public Records Enrichment (Perplexity) */}
@@ -435,7 +492,7 @@ export default async function HOAReportPage({ params, searchParams }) {
                       Always verify information directly with the HOA and review official documents before making purchasing decisions.
                     </p>
                     <p className="text-[10px] font-mono text-slate-500 mt-2">
-                      Report generated {formatDate(hoa.last_updated, 'full')} • Sources: Public Records, HOA Documents, Yelp{hoa.public_records?.enriched ? ', Perplexity' : ''}
+                      Report generated {formatDate(hoa.last_updated, 'full')} • Sources: Florida SunBiz, Public Records, Yelp{hoa.public_records?.enriched ? ', Perplexity AI' : ''}
                     </p>
                   </div>
                 </div>
