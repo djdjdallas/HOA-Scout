@@ -8,6 +8,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { getNeighborhoodContext, cacheYelpData, generateNeighborhoodVibe } from '@/lib/apis/yelp'
 import { analyzeHOAData, generateNeighborhoodVibe as generateVibeWithAI } from '@/lib/apis/claude'
+import { searchHOAInfo, searchManagementCompaniesByZip } from '@/lib/apis/perplexity'
 
 /**
  * Main function to analyze an HOA
@@ -186,35 +187,140 @@ export async function analyzeHOA(hoaId) {
 
 /**
  * Gather public records data
- * In production, this would scrape county websites, HOA databases, etc.
+ * Uses Perplexity API with smart search strategy:
+ * 1. First, search by HOA name/street name to find subdivision and management company
+ * 2. If no results, fallback to searching management companies by zip code
+ * Falls back to estimated data for fields that can't be verified
  */
 async function gatherPublicRecords(hoa) {
-  // For demo/hackathon, return structured mock data based on HOA location
-  // In production, this would scrape actual sources
+  console.log('📋 [PUBLIC RECORDS] Gathering public records for:', hoa.hoa_name)
 
-  console.log('Gathering public records for:', hoa.hoa_name)
+  // Extract street address from HOA name if it follows "HOA at [address]" pattern
+  let streetAddress = null
+  if (hoa.hoa_name.toLowerCase().startsWith('hoa at ')) {
+    streetAddress = hoa.hoa_name.substring(7)
+  }
 
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  // Step 1: Primary search - try to find HOA info with smart search terms
+  console.log('📋 [PUBLIC RECORDS] Step 1: Primary Perplexity search...')
+  let perplexityResult = await searchHOAInfo(
+    hoa.hoa_name,
+    hoa.city,
+    hoa.state,
+    hoa.zip_code,
+    streetAddress
+  )
 
+  // Step 2: Fallback search - if primary search failed, search by zip code
+  let zipSearchResult = null
+  if (!perplexityResult.foundInfo || !perplexityResult.managementCompany) {
+    console.log('📋 [PUBLIC RECORDS] Step 2: Fallback - searching management companies by zip code...')
+    zipSearchResult = await searchManagementCompaniesByZip(
+      hoa.zip_code,
+      hoa.city,
+      hoa.state
+    )
+
+    // If zip search found subdivision info, it might help identify the HOA
+    if (zipSearchResult.foundInfo) {
+      console.log('📋 [PUBLIC RECORDS] Found area management companies:', zipSearchResult.companies?.length || 0)
+      if (zipSearchResult.commonSubdivisions?.length > 0) {
+        console.log('📋 [PUBLIC RECORDS] Known subdivisions in area:', zipSearchResult.commonSubdivisions.slice(0, 3).join(', '))
+      }
+    }
+  }
+
+  // Step 3: Generate placeholder board members (clearly labeled as unverified)
+  const currentYear = new Date().getFullYear()
+  const mockBoardMembers = [
+    { name: 'Board President', position: 'President', term: `${currentYear}-${currentYear + 2}`, verified: false },
+    { name: 'Board Treasurer', position: 'Treasurer', term: `${currentYear}-${currentYear + 2}`, verified: false },
+    { name: 'Board Secretary', position: 'Secretary', term: `${currentYear}-${currentYear + 2}`, verified: false }
+  ]
+
+  // Step 4: Determine data quality/confidence level
+  let confidence = 'low'
+  let dataSource = 'Estimated Data (verification recommended)'
+
+  if (perplexityResult.foundInfo) {
+    if (perplexityResult.managementCompany && perplexityResult.contactInfo?.phone) {
+      confidence = 'high'
+      dataSource = 'Perplexity Search + Public Records'
+    } else if (perplexityResult.managementCompany || perplexityResult.contactInfo?.website) {
+      confidence = 'medium'
+      dataSource = 'Perplexity Search (partial match)'
+    } else if (perplexityResult.subdivisionName) {
+      confidence = 'medium'
+      dataSource = 'Perplexity Search (subdivision identified)'
+    }
+  } else if (zipSearchResult?.foundInfo) {
+    confidence = 'low'
+    dataSource = 'Area Management Companies (needs verification)'
+  }
+
+  console.log(`📋 [PUBLIC RECORDS] Data confidence: ${confidence}`)
+  console.log(`📋 [PUBLIC RECORDS] Source: ${dataSource}`)
+  if (perplexityResult.subdivisionName) {
+    console.log(`📋 [PUBLIC RECORDS] Subdivision identified: ${perplexityResult.subdivisionName}`)
+  }
+
+  // Step 5: Combine real + estimated data with clear labeling
   return {
     recordingDate: new Date().toISOString(),
-    source: 'County Assessor Records',
+    source: dataSource,
+    confidence: confidence,
     data: {
       legalName: hoa.hoa_name,
+      subdivisionName: perplexityResult.subdivisionName || null,
       registrationStatus: 'Active',
-      managementCompany: hoa.management_company || 'Self-managed',
-      boardMembers: [
-        { name: 'John Smith', position: 'President', term: '2023-2025' },
-        { name: 'Sarah Johnson', position: 'Treasurer', term: '2023-2025' },
-        { name: 'Michael Brown', position: 'Secretary', term: '2023-2025' }
-      ],
+      hoaExists: perplexityResult.hoaExists,
+
+      // VERIFIED data from Perplexity (if found)
+      managementCompany: {
+        name: perplexityResult.managementCompany || hoa.management_company || 'Unknown (verification needed)',
+        verified: !!perplexityResult.managementCompany
+      },
+      contactInfo: {
+        phone: perplexityResult.contactInfo?.phone || null,
+        email: perplexityResult.contactInfo?.email || null,
+        website: perplexityResult.contactInfo?.website || null,
+        address: perplexityResult.contactInfo?.address || null,
+        verified: perplexityResult.foundInfo
+      },
+      monthlyFeeEstimate: perplexityResult.monthlyFee || (hoa.monthly_fee ? `$${hoa.monthly_fee}` : null),
+
+      // Area management companies (from fallback search)
+      areaManagementCompanies: zipSearchResult?.companies || [],
+      knownSubdivisionsInArea: zipSearchResult?.commonSubdivisions || [],
+
+      // ESTIMATED data (clearly labeled)
+      boardMembers: mockBoardMembers,
       liens: [],
       violations: [],
       insuranceInfo: {
-        provider: 'State Farm',
-        coverage: '$2,000,000',
-        lastUpdated: '2024-01-15'
+        provider: 'To be verified',
+        coverage: 'Standard HOA Coverage (typical)',
+        lastUpdated: new Date().toISOString(),
+        verified: false
+      },
+
+      // Data quality metadata for the AI analysis and UI
+      dataQuality: {
+        verified: perplexityResult.foundInfo,
+        confidence: confidence,
+        sources: [...(perplexityResult.sources || []), ...(zipSearchResult?.sources || [])],
+        lastChecked: new Date().toISOString(),
+        perplexityResponseTimeMs: perplexityResult.responseTimeMs || null,
+        searchStrategy: perplexityResult.searchStrategy || null,
+        fieldsVerified: {
+          subdivisionName: !!perplexityResult.subdivisionName,
+          managementCompany: !!perplexityResult.managementCompany,
+          phone: !!perplexityResult.contactInfo?.phone,
+          email: !!perplexityResult.contactInfo?.email,
+          website: !!perplexityResult.contactInfo?.website,
+          address: !!perplexityResult.contactInfo?.address,
+          monthlyFee: !!perplexityResult.monthlyFee
+        }
       }
     }
   }
@@ -277,6 +383,7 @@ async function gatherCommunityFeedback(hoa) {
 /**
  * Gather financial data
  * In production, would request from HOA or scrape public filings
+ * NOTE: This returns ESTIMATED data - clearly labeled as unverified
  */
 async function gatherFinancialData(hoa) {
   console.log('Gathering financial data for:', hoa.hoa_name)
@@ -284,41 +391,58 @@ async function gatherFinancialData(hoa) {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 1000))
 
+  // Use provided monthly fee or a reasonable default for Las Vegas area
+  const currentFee = hoa.monthly_fee || 250
+  const totalUnits = hoa.total_units || 100
+
   // Calculate estimated annual budget based on monthly fee
-  const annualBudget = (hoa.monthly_fee || 300) * (hoa.total_units || 100) * 12
+  const annualBudget = currentFee * totalUnits * 12
+
+  // Generate realistic fee history (typical 3-5% annual increase)
+  // Calculate backwards from current fee to avoid negative numbers
+  const feeHistory = [
+    { year: 2020, monthlyFee: Math.round(currentFee * 0.85), verified: false },
+    { year: 2021, monthlyFee: Math.round(currentFee * 0.89), verified: false },
+    { year: 2022, monthlyFee: Math.round(currentFee * 0.93), verified: false },
+    { year: 2023, monthlyFee: Math.round(currentFee * 0.97), verified: false },
+    { year: 2024, monthlyFee: currentFee, verified: false }
+  ]
 
   return {
     lastUpdated: new Date().toISOString(),
-    source: 'HOA Financial Statements',
+    source: 'Estimated Financial Data (verification recommended)',
+    verified: false,
     data: {
-      monthlyFee: hoa.monthly_fee || 300,
+      monthlyFee: currentFee,
+      monthlyFeeVerified: !!hoa.monthly_fee,
       annualBudget: annualBudget,
+      annualBudgetVerified: false,
       reserveFund: {
-        current: annualBudget * 0.25, // 25% of annual budget
-        recommended: annualBudget * 0.20,
-        percentFunded: 125,
-        lastStudy: '2023-06-01'
+        current: Math.round(annualBudget * 0.25), // 25% of annual budget (estimated)
+        recommended: Math.round(annualBudget * 0.20),
+        percentFunded: 125, // Estimated as adequately funded
+        lastStudy: '2023-06-01',
+        verified: false
       },
       specialAssessments: {
         history: [],
-        upcoming: []
+        upcoming: [],
+        verified: false
       },
-      delinquencyRate: 2.1, // percentage
+      delinquencyRate: 2.1, // Industry average percentage
+      delinquencyRateVerified: false,
       budgetBreakdown: {
         landscaping: 30,
         insurance: 20,
         maintenance: 25,
         utilities: 10,
         management: 10,
-        reserves: 5
+        reserves: 5,
+        verified: false,
+        note: 'Typical HOA budget allocation percentages'
       },
-      feeHistory: [
-        { year: 2020, monthlyFee: hoa.monthly_fee - 50 },
-        { year: 2021, monthlyFee: hoa.monthly_fee - 35 },
-        { year: 2022, monthlyFee: hoa.monthly_fee - 20 },
-        { year: 2023, monthlyFee: hoa.monthly_fee - 10 },
-        { year: 2024, monthlyFee: hoa.monthly_fee }
-      ]
+      feeHistory: feeHistory,
+      feeHistoryNote: 'Estimated based on typical 3-4% annual increases. Actual history should be verified with HOA.'
     }
   }
 }
