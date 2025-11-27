@@ -153,10 +153,16 @@ export async function enrichHOAData(hoaId, force = false) {
 
     // Update monthly_fee if we found one and don't have one
     if (perplexityResult.monthlyFee && !hoa.monthly_fee) {
-      // Try to parse the fee (e.g., "$150/month" -> 150)
-      const feeMatch = perplexityResult.monthlyFee.match(/\$?(\d+(?:,\d+)?(?:\.\d+)?)/);
-      if (feeMatch) {
-        updateData.monthly_fee = parseFloat(feeMatch[1].replace(',', ''))
+      // Handle both string and number types
+      const feeValue = perplexityResult.monthlyFee
+      if (typeof feeValue === 'number') {
+        updateData.monthly_fee = feeValue
+      } else if (typeof feeValue === 'string') {
+        // Try to parse the fee (e.g., "$150/month" -> 150)
+        const feeMatch = feeValue.match(/\$?(\d+(?:,\d+)?(?:\.\d+)?)/)
+        if (feeMatch) {
+          updateData.monthly_fee = parseFloat(feeMatch[1].replace(',', ''))
+        }
       }
     }
 

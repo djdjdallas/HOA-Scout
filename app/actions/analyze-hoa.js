@@ -9,6 +9,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { getNeighborhoodContext, cacheYelpData } from '@/lib/apis/yelp'
 import { analyzeHOAData, generateNeighborhoodVibe as generateVibeWithAI } from '@/lib/apis/claude'
+import { geocodeAddress } from '@/lib/apis/geocoding'
 import {
   searchHOAInfo,
   searchManagementCompaniesByZip,
@@ -57,7 +58,41 @@ export async function analyzeHOA(hoaId) {
 
     // 2a: Public records + SunBiz (primary data source)
     console.log('  → Gathering public records & SunBiz data...')
-    const publicRecords = await gatherPublicRecords(hoa)
+    let publicRecords = await gatherPublicRecords(hoa)
+
+    // IMPORTANT: If no contact info found in primary search, do a secondary search
+    // This helps ensure Claude has contact info when generating flags
+    if (!publicRecords.data?.contactInfo?.phone &&
+        !publicRecords.data?.contactInfo?.website &&
+        !publicRecords.data?.contactInfo?.email) {
+      console.log('  → Primary search found no contact info, attempting secondary search...')
+      const secondaryResult = await searchHOAInfo(
+        hoa.hoa_name,
+        hoa.city,
+        hoa.state || 'FL',
+        hoa.zip_code,
+        hoa.address
+      )
+
+      // Merge any found contact info
+      if (secondaryResult.contactInfo?.phone || secondaryResult.contactInfo?.website || secondaryResult.contactInfo?.email) {
+        console.log('  ✓ Secondary search found contact info')
+        publicRecords.data.contactInfo = {
+          ...publicRecords.data.contactInfo,
+          phone: secondaryResult.contactInfo?.phone || publicRecords.data.contactInfo?.phone,
+          email: secondaryResult.contactInfo?.email || publicRecords.data.contactInfo?.email,
+          website: secondaryResult.contactInfo?.website || publicRecords.data.contactInfo?.website,
+          address: secondaryResult.contactInfo?.address || publicRecords.data.contactInfo?.address,
+          verified: secondaryResult.foundInfo
+        }
+        // Update confidence if we found more data
+        if (publicRecords.confidence === 'low' && secondaryResult.foundInfo) {
+          publicRecords.confidence = 'medium'
+          publicRecords.source = 'Perplexity Search (secondary match)'
+        }
+      }
+    }
+
     analysisData.publicRecords = publicRecords
     console.log('  ✓ Public records gathered')
 
@@ -85,14 +120,39 @@ export async function analyzeHOA(hoaId) {
     // Step 3: Get Yelp neighborhood context
     console.log('🌆 Step 3: Fetching Yelp neighborhood data...')
     let yelpData = null
+    let hoaCoordinates = hoa.coordinates
 
     try {
-      if (hoa.coordinates) {
+      // If no coordinates, try to geocode the HOA location
+      if (!hoaCoordinates) {
+        console.log('  → No coordinates stored, attempting to geocode...')
+        const addressToGeocode = hoa.address
+          ? `${hoa.address}, ${hoa.city}, ${hoa.state || 'FL'} ${hoa.zip_code}`
+          : `${hoa.city}, ${hoa.state || 'FL'} ${hoa.zip_code}`
+
+        try {
+          const geocodeResult = await geocodeAddress(addressToGeocode)
+          if (geocodeResult && geocodeResult.lat && geocodeResult.lng) {
+            hoaCoordinates = { lat: geocodeResult.lat, lng: geocodeResult.lng }
+            console.log(`  ✓ Geocoded to: ${hoaCoordinates.lat}, ${hoaCoordinates.lng}`)
+
+            // Save coordinates to HOA profile for future use
+            await supabase
+              .from('hoa_profiles')
+              .update({ coordinates: hoaCoordinates })
+              .eq('id', hoaId)
+            console.log('  ✓ Coordinates saved to database')
+          }
+        } catch (geocodeError) {
+          console.log('  ⚠ Geocoding failed:', geocodeError.message)
+        }
+      }
+
+      if (hoaCoordinates) {
         console.log('  → Calling Yelp API...')
-        const coords = hoa.coordinates
         yelpData = await getNeighborhoodContext(
-          coords.lat,
-          coords.lng,
+          hoaCoordinates.lat,
+          hoaCoordinates.lng,
           hoa.city,
           hoa.state || 'FL'
         )
@@ -108,7 +168,7 @@ export async function analyzeHOA(hoaId) {
         console.log('  → Caching Yelp data...')
         await cacheYelpData(
           hoaId,
-          hoa.coordinates,
+          hoaCoordinates,
           hoa.city,
           hoa.state || 'FL',
           yelpData,
@@ -116,7 +176,7 @@ export async function analyzeHOA(hoaId) {
         )
         console.log('  ✓ Yelp data cached')
       } else {
-        console.log('  ⚠ No coordinates available, skipping Yelp data')
+        console.log('  ⚠ No coordinates available after geocoding attempt, skipping Yelp data')
       }
     } catch (yelpError) {
       console.error('❌ Yelp API error:', yelpError)
