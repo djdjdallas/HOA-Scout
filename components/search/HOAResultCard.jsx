@@ -4,13 +4,27 @@ import Link from 'next/link'
 import { Building2, MapPin, Briefcase, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export default function HOAResultCard({ hoa, className, compact = false }) {
+export default function HOAResultCard({ hoa, className, compact = false, userAddress = null }) {
   const { id, hoa_name, city, state, zip_code, management_company, address } = hoa
+
+  // Build URL with user address params if available
+  const getReportUrl = () => {
+    const baseUrl = `/reports/${id}`
+    if (!userAddress?.lat || !userAddress?.lng) return baseUrl
+
+    const params = new URLSearchParams()
+    params.set('lat', userAddress.lat.toString())
+    params.set('lng', userAddress.lng.toString())
+    if (userAddress.address) {
+      params.set('address', userAddress.address)
+    }
+    return `${baseUrl}?${params.toString()}`
+  }
 
   if (compact) {
     return (
       <Link
-        href={`/reports/${id}`}
+        href={getReportUrl()}
         className={cn(
           'block p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all group',
           className
@@ -73,7 +87,7 @@ export default function HOAResultCard({ hoa, className, compact = false }) {
         </div>
 
         <Link
-          href={`/reports/${id}`}
+          href={getReportUrl()}
           className="ml-4 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors flex items-center flex-shrink-0"
         >
           View Report

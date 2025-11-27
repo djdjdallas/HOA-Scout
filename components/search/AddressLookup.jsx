@@ -241,7 +241,17 @@ export default function AddressLookup({ onSelect, className }) {
           </p>
           <div className="space-y-2">
             {hoaResults.map((hoa) => (
-              <HOAResultCard key={hoa.id} hoa={hoa} compact onSelect={onSelect} />
+              <HOAResultCard
+                key={hoa.id}
+                hoa={hoa}
+                compact
+                onSelect={onSelect}
+                userAddress={geocodeResult ? {
+                  address: geocodeResult.displayName,
+                  lat: geocodeResult.lat,
+                  lng: geocodeResult.lon || geocodeResult.lng
+                } : null}
+              />
             ))}
           </div>
           <p className="text-xs text-gray-500 text-center">

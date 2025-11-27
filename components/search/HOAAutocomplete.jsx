@@ -166,7 +166,7 @@ export default function HOAAutocomplete({ onSelect, className }) {
       {isOpen && results.length > 0 && (
         <div
           ref={dropdownRef}
-          className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+          className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-[320px] overflow-y-auto"
           role="listbox"
         >
           {results.map((hoa, index) => (

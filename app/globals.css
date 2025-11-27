@@ -67,3 +67,61 @@
     background-position: 0 0;
   }
 }
+
+/* Print styles for HOA reports */
+@media print {
+  /* Hide non-essential elements */
+  .bg-scan-lines,
+  [data-report-actions],
+  nav,
+  footer button,
+  .fixed {
+    display: none !important;
+  }
+
+  /* Reset backgrounds for print */
+  body,
+  .bg-dossier-bg,
+  .bg-dossier-surface,
+  .bg-dossier-surface\/50 {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Ensure content is readable on print */
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500,
+  .text-cyan-400,
+  .text-cyan-300,
+  .text-dossier-text {
+    color: #1f2937 !important;
+  }
+
+  /* Adjust borders for print */
+  .border-dossier-border,
+  .border-cyan-400\/30,
+  .border-cyan-500\/30 {
+    border-color: #d1d5db !important;
+  }
+
+  /* Score bars should be visible */
+  .bg-cyan-500,
+  .bg-green-500,
+  .bg-amber-500,
+  .bg-red-500 {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Page breaks */
+  section {
+    page-break-inside: avoid;
+  }
+
+  /* Remove rounded corners for cleaner print */
+  .rounded,
+  .rounded-full {
+    border-radius: 2px !important;
+  }
+}

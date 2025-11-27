@@ -12,6 +12,8 @@ export default function AnalysisPending({ hoaId }) {
   const router = useRouter()
   const [dots, setDots] = useState('')
   const [checkCount, setCheckCount] = useState(0)
+  const [timedOut, setTimedOut] = useState(false)
+  const [isRetrying, setIsRetrying] = useState(false)
 
   useEffect(() => {
     // Animate the dots
@@ -23,6 +25,8 @@ export default function AnalysisPending({ hoaId }) {
   }, [])
 
   useEffect(() => {
+    if (timedOut) return // Don't poll if timed out
+
     // Poll for completion every 3 seconds
     const pollInterval = setInterval(async () => {
       try {
@@ -41,16 +45,77 @@ export default function AnalysisPending({ hoaId }) {
       }
     }, 3000)
 
-    // Stop polling after 2 minutes (40 checks)
+    // Stop polling after 2 minutes (40 checks) and show timeout message
     const timeout = setTimeout(() => {
       clearInterval(pollInterval)
+      setTimedOut(true)
     }, 120000)
 
     return () => {
       clearInterval(pollInterval)
       clearTimeout(timeout)
     }
-  }, [hoaId, router])
+  }, [hoaId, router, timedOut])
+
+  const handleRetry = async () => {
+    setIsRetrying(true)
+    setTimedOut(false)
+    setCheckCount(0)
+
+    try {
+      // Trigger analysis via API
+      await fetch(`/api/hoa/${hoaId}/analyze`, { method: 'POST' })
+      // Polling will restart automatically due to timedOut state change
+    } catch (error) {
+      console.error('Error triggering analysis:', error)
+    } finally {
+      setIsRetrying(false)
+    }
+  }
+
+  const handleRefresh = () => {
+    router.refresh()
+  }
+
+  // Timeout state - show retry options
+  if (timedOut) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center mb-6">
+          <span className="text-2xl">⚠️</span>
+        </div>
+
+        <h2 className="text-2xl font-mono text-dossier-text mb-3">
+          Analysis Taking Longer Than Expected
+        </h2>
+
+        <p className="text-sm text-slate-400 text-center max-w-md mb-6">
+          The analysis is still processing. This can happen with complex HOAs or during high demand.
+          You can wait and check again, or retry the analysis.
+        </p>
+
+        <div className="flex gap-4">
+          <button
+            onClick={handleRefresh}
+            className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-dossier-bg font-mono text-sm font-semibold rounded transition-colors"
+          >
+            Check Status
+          </button>
+          <button
+            onClick={handleRetry}
+            disabled={isRetrying}
+            className="px-6 py-3 bg-dossier-surface hover:bg-slate-700 text-slate-300 font-mono text-sm rounded border border-dossier-border transition-colors disabled:opacity-50"
+          >
+            {isRetrying ? 'Retrying...' : 'Retry Analysis'}
+          </button>
+        </div>
+
+        <p className="text-[10px] font-mono text-slate-600 mt-8">
+          Checked {checkCount} times over 2 minutes
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col items-center justify-center py-20">

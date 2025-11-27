@@ -6,9 +6,9 @@
 
 'use client'
 
-import { MapPin, Star, Coffee, ShoppingBag, Utensils, TreePine, ExternalLink } from 'lucide-react'
+import { MapPin, Star, Coffee, ShoppingBag, Utensils, TreePine, ExternalLink, Home } from 'lucide-react'
 
-export default function NeighborhoodContext({ neighborhoodData, city, state }) {
+export default function NeighborhoodContext({ neighborhoodData, city, state, userAddress = null, source = null }) {
   if (!neighborhoodData) {
     return (
       <div className="bg-dossier-surface/50 rounded border border-dossier-border p-6">
@@ -22,6 +22,9 @@ export default function NeighborhoodContext({ neighborhoodData, city, state }) {
       </div>
     )
   }
+
+  // Check if this is data for user's specific address
+  const isUserAddress = source === 'user_address' && userAddress
 
   const walkabilityColor =
     neighborhoodData.walkability_score >= 7 ? 'text-cyan-400' :
@@ -48,6 +51,18 @@ export default function NeighborhoodContext({ neighborhoodData, city, state }) {
           <span className="text-red-400 font-semibold">Yelp</span>
         </div>
       </div>
+
+      {/* User Address Indicator */}
+      {isUserAddress && (
+        <div className="px-5 py-3 bg-cyan-500/10 border-b border-cyan-500/20">
+          <div className="flex items-center gap-2">
+            <Home className="h-4 w-4 text-cyan-400" />
+            <span className="text-xs font-mono text-cyan-300">
+              Data for your address: {userAddress}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="p-5">
         {/* Walkability Score */}

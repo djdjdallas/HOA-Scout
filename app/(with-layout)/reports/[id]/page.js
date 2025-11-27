@@ -5,18 +5,23 @@
 
 import React from 'react'
 import { getHOAById } from '@/app/actions/hoa-search'
+import { fetchNeighborhoodForAddress } from '@/app/actions/fetch-neighborhood'
+import { analyzeHOA } from '@/app/actions/analyze-hoa'
 import { notFound } from 'next/navigation'
 import ScoreDisplay from '@/components/hoa-report/ScoreDisplay'
 import FlagCard, { FlagBadge } from '@/components/hoa-report/FlagCard'
 import NeighborhoodContext from '@/components/hoa-report/NeighborhoodContext'
+import NeighborhoodPrompt from '@/components/hoa-report/NeighborhoodPrompt'
 import {
-  MapPin, DollarSign, Download, Share2, Building, TrendingUp,
-  Users, FileText, ChevronRight, Shield, Clock, Database,
-  AlertTriangle, CheckCircle2, BookmarkPlus, Printer
+  MapPin, DollarSign, Building, TrendingUp,
+  Users, FileText, Shield, Clock, Database,
+  AlertTriangle, CheckCircle2
 } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import VerdictBar from './VerdictBar'
 import AnalysisPending from './AnalysisPending'
+import EnrichmentStatus from '@/components/hoa-report/EnrichmentStatus'
+import ReportActions from './ReportActions'
 
 export async function generateMetadata({ params }) {
   const { id } = await params
@@ -34,8 +39,9 @@ export async function generateMetadata({ params }) {
   }
 }
 
-export default async function HOAReportPage({ params }) {
+export default async function HOAReportPage({ params, searchParams }) {
   const { id } = await params
+  const resolvedSearchParams = await searchParams
   const result = await getHOAById(id)
 
   if (!result.success || !result.data) {
@@ -43,8 +49,47 @@ export default async function HOAReportPage({ params }) {
   }
 
   const hoa = result.data
-  const neighborhood = hoa.neighborhood_context?.[0] || null
   const isAnalysisComplete = hoa.overall_score !== null
+
+  // Trigger analysis if not already complete (runs in background)
+  if (!isAnalysisComplete) {
+    // Fire and forget - don't await, let it run in background
+    analyzeHOA(id).catch(err => {
+      console.error('Background analysis error:', err)
+    })
+  }
+
+  // Check if user provided their property address via URL params
+  const userLat = resolvedSearchParams?.lat ? parseFloat(resolvedSearchParams.lat) : null
+  const userLng = resolvedSearchParams?.lng ? parseFloat(resolvedSearchParams.lng) : null
+  const userAddress = resolvedSearchParams?.address || null
+  const hasUserAddress = userLat && userLng && !isNaN(userLat) && !isNaN(userLng)
+
+  // Fetch neighborhood data based on user's address (if provided) or fall back to HOA's cached data
+  let neighborhood = null
+  let neighborhoodSource = null
+
+  if (hasUserAddress) {
+    // Fetch neighborhood data for user's specific property address
+    const neighborhoodResult = await fetchNeighborhoodForAddress(
+      userLat,
+      userLng,
+      hoa.city,
+      hoa.state,
+      id
+    )
+
+    if (neighborhoodResult.success && neighborhoodResult.data) {
+      neighborhood = neighborhoodResult.data
+      neighborhoodSource = 'user_address'
+    }
+  }
+
+  // Fall back to HOA's linked neighborhood data if no user address provided
+  if (!neighborhood && hoa.neighborhood_context?.[0]) {
+    neighborhood = hoa.neighborhood_context[0]
+    neighborhoodSource = 'hoa_default'
+  }
 
   return (
     <div className="min-h-screen bg-dossier-bg">
@@ -86,12 +131,15 @@ export default async function HOAReportPage({ params }) {
                   </span>
                 </div>
 
-                {hoa.monthly_fee && (
+                {(hoa.monthly_fee || hoa.public_records?.monthlyFeeEstimate) && (
                   <div className="flex items-center gap-2 px-3 py-1 rounded bg-cyan-500/10 border border-cyan-500/30">
                     <DollarSign className="h-4 w-4 text-cyan-400" />
                     <span className="font-mono text-sm text-cyan-300 font-semibold">
-                      {hoa.monthly_fee}/mo
+                      {hoa.monthly_fee ? `$${hoa.monthly_fee}/mo` : hoa.public_records?.monthlyFeeEstimate}
                     </span>
+                    {!hoa.monthly_fee && hoa.public_records?.monthlyFeeEstimate && (
+                      <span className="text-[8px] font-mono text-slate-500">(est.)</span>
+                    )}
                   </div>
                 )}
 
@@ -99,6 +147,11 @@ export default async function HOAReportPage({ params }) {
                   <div className="flex items-center gap-2 text-slate-400">
                     <Building className="h-4 w-4" />
                     <span className="text-sm">{hoa.management_company}</span>
+                    {hoa.public_records?.managementCompany?.verified && (
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded">
+                        VERIFIED
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -338,13 +391,24 @@ export default async function HOAReportPage({ params }) {
                   </div>
                 </section>
 
+                {/* Public Records Enrichment (Perplexity) */}
+                <EnrichmentStatus
+                  hoaId={id}
+                  initialPublicRecords={hoa.public_records}
+                  hoaName={hoa.hoa_name}
+                />
+
                 {/* Neighborhood Context (Yelp) */}
-                {neighborhood && (
+                {neighborhood ? (
                   <NeighborhoodContext
                     neighborhoodData={neighborhood}
                     city={hoa.city}
                     state={hoa.state}
+                    userAddress={hasUserAddress ? userAddress : null}
+                    source={neighborhoodSource}
                   />
+                ) : (
+                  <NeighborhoodPrompt hoaId={id} />
                 )}
               </div>
             </div>
@@ -354,23 +418,8 @@ export default async function HOAReportPage({ params }) {
             ═══════════════════════════════════════════════════════════════ */}
             <footer className="mt-8 pt-6 border-t border-dossier-border">
               {/* Action Buttons */}
-              <div className="flex flex-wrap gap-3 mb-6">
-                <button className="flex items-center gap-2 px-5 py-3 bg-cyan-500 hover:bg-cyan-400 text-dossier-bg font-mono text-sm font-semibold rounded transition-colors">
-                  <Download className="h-4 w-4" />
-                  Download PDF
-                </button>
-                <button className="flex items-center gap-2 px-5 py-3 bg-dossier-surface hover:bg-slate-700 text-slate-300 font-mono text-sm rounded border border-dossier-border transition-colors">
-                  <Share2 className="h-4 w-4" />
-                  Share Report
-                </button>
-                <button className="flex items-center gap-2 px-5 py-3 bg-dossier-surface hover:bg-slate-700 text-slate-300 font-mono text-sm rounded border border-dossier-border transition-colors">
-                  <BookmarkPlus className="h-4 w-4" />
-                  Save to Account
-                </button>
-                <button className="flex items-center gap-2 px-5 py-3 bg-dossier-surface hover:bg-slate-700 text-slate-300 font-mono text-sm rounded border border-dossier-border transition-colors">
-                  <Printer className="h-4 w-4" />
-                  Print
-                </button>
+              <div className="mb-6">
+                <ReportActions hoa={hoa} />
               </div>
 
               {/* Data Quality & Disclaimer */}
@@ -386,7 +435,7 @@ export default async function HOAReportPage({ params }) {
                       Always verify information directly with the HOA and review official documents before making purchasing decisions.
                     </p>
                     <p className="text-[10px] font-mono text-slate-500 mt-2">
-                      Report generated {formatDate(hoa.last_updated, 'full')} • Sources: Public Records, HOA Documents, Yelp
+                      Report generated {formatDate(hoa.last_updated, 'full')} • Sources: Public Records, HOA Documents, Yelp{hoa.public_records?.enriched ? ', Perplexity' : ''}
                     </p>
                   </div>
                 </div>
