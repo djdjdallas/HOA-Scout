@@ -1,17 +1,17 @@
 /**
  * Search Page
- * Dedicated search interface with recent searches
+ * Dedicated search interface with recent searches and hybrid search
  */
 
-import SearchForm from '@/components/search/SearchForm'
+import HybridSearch from '@/components/search/HybridSearch'
 import { getUserSearches } from '@/app/actions/hoa-search'
 import Link from 'next/link'
-import { Clock, MapPin } from 'lucide-react'
+import { Clock, MapPin, Database, ArrowLeft } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 export const metadata = {
   title: 'Search HOAs | HOA Scout',
-  description: 'Search for comprehensive HOA reports by address or neighborhood',
+  description: 'Search for Florida HOAs by name, location, or address. Access 16,000+ HOA profiles.',
 }
 
 export default async function SearchPage() {
@@ -21,27 +21,40 @@ export default async function SearchPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Breadcrumb */}
+        <Link
+          href="/"
+          className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-8"
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Back to Home
+        </Link>
+
         {/* Header */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Search HOA Reports
+            Find Your HOA
           </h1>
-          <p className="text-lg text-gray-600">
-            Enter an address or HOA name to get started
+          <p className="text-lg text-gray-600 mb-2">
+            Search by name, browse by location, or look up by address
+          </p>
+          <p className="text-sm text-gray-500 flex items-center justify-center">
+            <Database className="h-4 w-4 mr-1" />
+            16,000+ Florida HOAs in our database
           </p>
         </div>
 
-        {/* Search Form */}
-        <div className="mb-12">
-          <SearchForm />
+        {/* Main Search Card */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 lg:p-8 mb-8">
+          <HybridSearch defaultTab="name" />
         </div>
 
         {/* Recent Searches */}
         {searches.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Clock className="h-5 w-5 mr-2 text-gray-600" />
-              Recent Searches
+              Your Recent Searches
             </h2>
             <div className="space-y-3">
               {searches.map((search) => (
@@ -82,31 +95,36 @@ export default async function SearchPage() {
           </div>
         )}
 
-        {/* Popular Searches/Examples */}
-        <div className="mt-12 bg-blue-50 rounded-xl p-6">
+        {/* Popular Florida Cities */}
+        <div className="bg-blue-50 rounded-xl p-6">
           <h3 className="font-semibold text-gray-900 mb-3">
-            🔍 Try these popular areas:
+            Popular Florida Cities
           </h3>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { location: 'Los Angeles, CA', desc: 'Urban HOAs with high-rise condos' },
-              { location: 'Las Vegas, NV', desc: 'Master-planned communities' },
-              { location: 'Marina del Rey, CA', desc: 'Waterfront HOAs' },
-              { location: 'Henderson, NV', desc: 'Suburban family communities' },
+              { city: 'Miami', count: '2,500+' },
+              { city: 'Orlando', count: '1,800+' },
+              { city: 'Tampa', count: '1,400+' },
+              { city: 'Jacksonville', count: '1,200+' },
+              { city: 'Fort Lauderdale', count: '900+' },
+              { city: 'West Palm Beach', count: '800+' },
+              { city: 'Naples', count: '600+' },
+              { city: 'Sarasota', count: '500+' },
             ].map((item) => (
-              <div key={item.location} className="p-3 bg-white rounded-lg border border-blue-200">
-                <p className="font-medium text-gray-900">{item.location}</p>
-                <p className="text-xs text-gray-600 mt-0.5">{item.desc}</p>
+              <div key={item.city} className="p-3 bg-white rounded-lg border border-blue-200 hover:border-blue-400 transition-colors cursor-pointer">
+                <p className="font-medium text-gray-900">{item.city}</p>
+                <p className="text-xs text-gray-500">{item.count} HOAs</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* Info Section */}
-        <div className="mt-12 text-center text-sm text-gray-600">
+        <div className="mt-8 text-center text-sm text-gray-600">
           <p>
-            <strong>Note:</strong> Reports are generated from public records, community feedback,
-            and AI analysis. For the most accurate information, always verify with the HOA directly.
+            <strong>Note:</strong> HOA data is sourced from Florida SunBiz corporate records.
+            Reports are generated using AI analysis. For the most accurate information,
+            always verify with the HOA directly.
           </p>
         </div>
       </div>

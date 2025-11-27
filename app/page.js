@@ -3,10 +3,9 @@
  * Split-screen hero with dark left panel and light right panel
  */
 
-import { CheckCircle, FileText, Building2 } from 'lucide-react'
-import SearchForm from '@/components/search/SearchForm'
+import { CheckCircle, FileText, Building2, Database } from 'lucide-react'
+import HybridSearch from '@/components/search/HybridSearch'
 import Link from 'next/link'
-import Image from 'next/image'
 
 export default function HomePage() {
   return (
@@ -50,6 +49,12 @@ export default function HomePage() {
               <span className="text-slate-200">Spot restrictive rental policies</span>
             </li>
           </ul>
+
+          {/* Database Stats */}
+          <div className="mt-10 flex items-center text-slate-400">
+            <Database className="h-4 w-4 mr-2" />
+            <span className="text-sm">16,000+ Florida HOAs in our database</span>
+          </div>
         </div>
 
         {/* Testimonial */}
@@ -76,7 +81,7 @@ export default function HomePage() {
         <div className="w-full max-w-xl">
           {/* Top Link */}
           <Link
-            href="#how-it-works"
+            href="/search"
             className="inline-flex items-center text-sm text-blue-600 hover:text-blue-700 mb-8 font-medium"
           >
             <FileText className="h-4 w-4 mr-2" />
@@ -86,36 +91,14 @@ export default function HomePage() {
           {/* Card */}
           <div className="bg-white rounded-2xl shadow-xl p-8 lg:p-10">
             <h2 className="text-3xl font-bold text-gray-900 mb-3">
-              Evaluate a property
+              Find your HOA
             </h2>
-            <p className="text-gray-600 mb-8">
-              Enter an address or HOA name to generate a full dossier.
+            <p className="text-gray-600 mb-6">
+              Search by HOA name, browse by location, or enter a property address.
             </p>
 
-            {/* Search Form */}
-            <SearchForm
-              showExamples={false}
-              buttonText="Generate Report"
-              placeholder="e.g. 1234 Maple Drive, Springfield"
-            />
-
-            {/* Example Links */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Link
-                href="/search?q=Sunset Ridge Condos"
-                className="text-xs text-gray-500 hover:text-gray-700 uppercase tracking-wide font-medium"
-              >
-                TRY EXAMPLE<br />
-                <span className="text-sm text-gray-700 normal-case font-normal">Sunset Ridge Condos</span>
-              </Link>
-              <Link
-                href="/search?q=The Highland Lofts"
-                className="text-xs text-gray-500 hover:text-gray-700 uppercase tracking-wide font-medium sm:ml-6"
-              >
-                TRY EXAMPLE<br />
-                <span className="text-sm text-gray-700 normal-case font-normal">The Highland Lofts</span>
-              </Link>
-            </div>
+            {/* Hybrid Search */}
+            <HybridSearch defaultTab="name" />
           </div>
         </div>
       </div>
