@@ -66,9 +66,25 @@ export default function HomePage() {
             </span>
           </div>
         </div>
+
+        {/* Testimonial */}
+        <div className="mt-16">
+          <div className="flex items-center mb-2">
+            <div className="flex -space-x-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 border-2 border-dark-navy"></div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 border-2 border-dark-navy"></div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 border-2 border-dark-navy"></div>
+            </div>
+          </div>
+          <p className="text-lg font-medium mb-1">
+            "Saved me from a $15k assessment."
+          </p>
+          <p className="text-sm text-slate-400">Trusted by 1,000+ buyers</p>
+        </div>
+
         {/* Copyright */}
         <div className="mt-8 text-xs text-slate-500">
-          © 2025 HOA Scout Inc. Professional Research Tool.
+          © 2024 HOA Scout Inc. Professional Research Tool.
         </div>
       </div>
 

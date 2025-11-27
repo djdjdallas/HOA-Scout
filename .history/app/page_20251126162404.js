@@ -3,9 +3,9 @@
  * Split-screen hero with dark left panel and light right panel
  */
 
-import { CheckCircle, FileText, Building2, Database } from "lucide-react";
-import HybridSearch from "@/components/search/HybridSearch";
-import Link from "next/link";
+import { CheckCircle, FileText, Building2, Database } from 'lucide-react'
+import HybridSearch from '@/components/search/HybridSearch'
+import Link from 'next/link'
 
 export default function HomePage() {
   return (
@@ -24,65 +24,77 @@ export default function HomePage() {
 
           {/* Headline */}
           <h1 className="text-4xl lg:text-5xl font-bold mb-6 leading-tight">
-            Don't buy blind.
-            <br />
+            Don't buy blind.<br />
             Know your HOA before you sign.
           </h1>
 
           {/* Subheading */}
           <p className="text-lg text-slate-300 mb-10 leading-relaxed max-w-lg">
-            Get comprehensive HOA reports with financial health, rules analysis,
-            community sentiment, and neighborhood context from Yelp. Make
-            informed decisions on your biggest investment.
+            Get comprehensive HOA reports with financial health, rules analysis, community sentiment,
+            and neighborhood context from Yelp. Make informed decisions on your biggest investment.
           </p>
 
           {/* Bullet Points */}
           <ul className="space-y-4">
             <li className="flex items-start">
               <CheckCircle className="h-5 w-5 text-green-400 mr-3 mt-0.5 flex-shrink-0" />
-              <span className="text-slate-200">
-                Uncover hidden special assessments
-              </span>
+              <span className="text-slate-200">Uncover hidden special assessments</span>
             </li>
             <li className="flex items-start">
               <CheckCircle className="h-5 w-5 text-green-400 mr-3 mt-0.5 flex-shrink-0" />
-              <span className="text-slate-200">
-                Analyze reserve fund health
-              </span>
+              <span className="text-slate-200">Analyze reserve fund health</span>
             </li>
             <li className="flex items-start">
               <CheckCircle className="h-5 w-5 text-green-400 mr-3 mt-0.5 flex-shrink-0" />
-              <span className="text-slate-200">
-                Spot restrictive rental policies
-              </span>
+              <span className="text-slate-200">Spot restrictive rental policies</span>
             </li>
           </ul>
 
           {/* Database Stats */}
           <div className="mt-10 flex items-center text-slate-400">
             <Database className="h-4 w-4 mr-2" />
-            <span className="text-sm">
-              16,000+ Florida HOAs in our database
-            </span>
+            <span className="text-sm">16,000+ Florida HOAs in our database</span>
           </div>
         </div>
+
+        {/* Testimonial */}
+        <div className="mt-16">
+          <div className="flex items-center mb-2">
+            <div className="flex -space-x-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 border-2 border-dark-navy"></div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 border-2 border-dark-navy"></div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 border-2 border-dark-navy"></div>
+            </div>
+          </div>
+          <p className="text-lg font-medium mb-1">"Saved me from a $15k assessment."</p>
+          <p className="text-sm text-slate-400">Trusted by 1,000+ buyers</p>
+        </div>
+
         {/* Copyright */}
         <div className="mt-8 text-xs text-slate-500">
-          © 2025 HOA Scout Inc. Professional Research Tool.
+          © 2024 HOA Scout Inc. Professional Research Tool.
         </div>
       </div>
 
       {/* Right Panel - Light */}
       <div className="bg-gray-50 grid-background lg:w-7/12 flex items-center justify-center p-8 lg:p-12 min-h-[50vh] lg:min-h-screen">
         <div className="w-full max-w-xl">
+          {/* Top Link */}
+          <Link
+            href="/search"
+            className="inline-flex items-center text-sm text-blue-600 hover:text-blue-700 mb-8 font-medium"
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            Start your investigation
+          </Link>
+
           {/* Card */}
           <div className="bg-white rounded-2xl shadow-xl p-8 lg:p-10">
             <h2 className="text-3xl font-bold text-gray-900 mb-3">
               Find your HOA
             </h2>
             <p className="text-gray-600 mb-6">
-              Search by HOA name, browse by location, or enter a property
-              address.
+              Search by HOA name, browse by location, or enter a property address.
             </p>
 
             {/* Hybrid Search */}
@@ -91,5 +103,5 @@ export default function HomePage() {
         </div>
       </div>
     </div>
-  );
+  )
 }

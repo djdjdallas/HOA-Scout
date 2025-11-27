@@ -3,7 +3,6 @@
  * GET /api/cities
  * Returns distinct cities from hoa_profiles, sorted alphabetically
  */
-
 import { createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
@@ -19,19 +18,49 @@ export async function GET() {
       return NextResponse.json({
         success: true,
         cities: cachedCities,
+        count: cachedCities.length,
         cached: true
       })
     }
 
     const supabase = createServiceClient()
 
-    // Get distinct cities from hoa_profiles
-    // Using a raw query for better performance with DISTINCT
+    // Use raw SQL for efficient DISTINCT query
     const { data, error } = await supabase
-      .from('hoa_profiles')
-      .select('city')
-      .not('city', 'is', null)
-      .order('city', { ascending: true })
+      .rpc('get_distinct_cities')
+
+    // Fallback if RPC doesn't exist - fetch with higher limit
+    if (error?.code === '42883') {
+      // Function doesn't exist, use fallback approach
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('hoa_profiles')
+        .select('city')
+        .not('city', 'is', null)
+        .order('city', { ascending: true })
+        .limit(50000) // Increase limit to get all rows
+
+      if (fallbackError) {
+        console.error('Cities fetch error:', fallbackError)
+        return NextResponse.json(
+          { error: 'Failed to fetch cities' },
+          { status: 500 }
+        )
+      }
+
+      const uniqueCities = [...new Set(fallbackData.map(row => row.city))]
+        .filter(city => city && city.trim().length > 0)
+        .sort((a, b) => a.localeCompare(b))
+
+      cachedCities = uniqueCities
+      cacheTimestamp = Date.now()
+
+      return NextResponse.json({
+        success: true,
+        cities: uniqueCities,
+        count: uniqueCities.length,
+        cached: false
+      })
+    }
 
     if (error) {
       console.error('Cities fetch error:', error)
@@ -41,8 +70,9 @@ export async function GET() {
       )
     }
 
-    // Get unique cities and filter out empty strings
-    const uniqueCities = [...new Set(data.map(row => row.city))]
+    // RPC returns array of {city: string}
+    const uniqueCities = data
+      .map(row => row.city)
       .filter(city => city && city.trim().length > 0)
       .sort((a, b) => a.localeCompare(b))
 
